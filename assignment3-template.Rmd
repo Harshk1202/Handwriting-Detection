@@ -1,0 +1,456 @@
+---
+title: "ETC3250/5250 IML Asignment 3 Solution"
+author: HARSH KATIYAR (32877943)
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    code_folding: show
+---
+
+
+```{r, message = FALSE, echo = -1, warning=FALSE}
+knitr::opts_chunk$set(message = FALSE, warning = FALSE)
+set.seed(32877943)
+
+library(tidyverse)
+library(rpart)
+library(kknn)
+library(yardstick)
+library(ranger)
+library(xgboost)
+library(rsample)
+
+```
+
+
+```{r}
+mydata <- read_csv(here::here("data32877943.csv"))
+newrecords <- read_csv(here::here("newrecords32877943.csv"))
+
+```
+
+
+## Preliminary analysis
+
+
+### Question 1
+
+What is the letter in your data? 
+
+```{r}
+set.seed(32877943)
+image <- function(data = mydata, 
+                  w = 28, 
+                  h = 28, 
+                  which = sample(1:3423, 45)) {
+  mydata %>% 
+    mutate(id = 1:n()) %>% 
+    filter(id %in% which) %>% 
+    pivot_longer(starts_with("V")) %>% 
+    mutate(col = rep(rep(1:w, each = h), n_distinct(id)),
+           row = rep(rep(1:h, times = w), n_distinct(id)))
+}
+
+gletters <- image(mydata) %>% 
+    ggplot(aes(col, row)) +
+    geom_tile(aes(fill = value)) + 
+    scale_y_reverse() +
+    theme_void(base_size = 18) +
+    guides(fill = "none") +
+    coord_equal()
+
+gletters
+
+```
+
+
+The letter in my data is **I**.
+
+### Question 2
+
+```{r}
+set.seed(32877943)
+image <- function(data = mydata, 
+                  w = 28, 
+                  h = 28, 
+                  which = sample(1:3423, 12)) {
+  mydata %>% 
+    mutate(id = 1:n()) %>% 
+    filter(id %in% which) %>% 
+    pivot_longer(starts_with("V")) %>% 
+    mutate(col = rep(rep(1:w, each = h), n_distinct(id)),
+           row = rep(rep(1:h, times = w), n_distinct(id)))
+}
+
+gletters1 <- image(mydata) %>% 
+    ggplot(aes(col, row)) +
+    geom_tile(aes(fill = value)) + 
+    facet_wrap(~id, nrow = 3) + 
+    scale_y_reverse() +
+    theme_void(base_size = 18) +
+    guides(fill = "none") +
+    coord_equal()
+
+gletters1
+```
+
+### Question 3
+
+```{r}
+set.seed(32877943)
+
+data_pca <- prcomp(mydata)
+(data_pca$sdev^2 / sum(data_pca$sdev^2)) %>% head(5)
+
+total <- sum((data_pca$sdev^2 / sum(data_pca$sdev^2)) %>% head(5))
+```
+
+PC1 explains 24.13 % variance in the data
+PC2 explains 11.86 % variance in the data
+PC3 explains 9.02 % variance in the data
+PC4 explains 7.90 % variance in the data
+PC5 explains 7.15 % variance in the data
+
+Therefore in total, the first five principal components explain **`r total*100` %** variance in the data.
+
+
+### Question 4
+
+```{r}
+pc_decompose <- function(k) {
+  Xnew <- data_pca$x[,k, drop = FALSE] %*% t(data_pca$rotation[,k,drop =FALSE])
+  as.data.frame(Xnew) %>%
+  image()  
+}
+
+gletters %+% pc_decompose(1)
+gletters %+% pc_decompose(2)
+```
+
+### Question 5
+
+```{r}
+set.seed(32877943)
+haverage <- hclust(dist(data_pca$x), method = "average")
+```
+
+### Question 6
+
+```{r}
+set.seed(32877943)
+c_average <- cutree(haverage, k = 4) 
+table(c_average)
+```
+
+
+### Question 7
+
+```{r}
+set.seed(32877943)
+
+mydata2 <-  cbind(mydata, c_average)
+ 
+mydata3 <- mydata2 %>%
+  group_by(c_average) %>% 
+  slice_sample(n=10) %>%
+  ungroup()
+
+set.seed(32877943)
+
+image2 <- function(data = mydata3, 
+                  w = 28, 
+                  h = 28) {
+  mydata3 %>% 
+    mutate(id = 1:n()) %>% 
+    pivot_longer(starts_with("V")) %>% 
+    mutate(col = rep(rep(1:w, each = h), n_distinct(id)),
+           row = rep(rep(1:h, times = w), n_distinct(id)))
+}
+
+gletters2 <- image2(mydata3) %>% 
+    ggplot(aes(col, row)) +
+    geom_tile(aes(fill = value)) + 
+    facet_wrap(c_average~id, ncol = 4) + 
+    scale_y_reverse() +
+    theme_void(base_size = 12) +
+    guides(fill = "none") +
+    coord_equal() 
+  
+
+
+gletters2
+```
+
+In the above figure, 1 to 15 is the id of the image and above number is the cluster number to which it belongs. 
+
+- From Cluster 1, we can see that most of the image are inclined and most of them are I's without bars on top and bottom except 1. 
+- From Cluster 2, we can see that both the images are of capital I.
+- From Cluster 3, the images are similar to cluster 2 but they are different in terms of their thickness.
+- From cluster 4, we can see that image is of capital I, it is very thick and little bit inclined.
+
+
+## Report
+
+
+WRITE YOUR REPORT HERE
+
+```{r, class.source = 'fold-hide'}
+# All R code in the report section should include `class.source = 'fold-hide'` in the chunk like this one
+set.seed(32877943)
+
+kout <- kmeans(data_pca$x, centers = 3)
+
+table(kout$cluster)
+
+kcluster <- factor(kout$cluster)
+
+mydata4 <-  cbind(mydata, kcluster)
+ 
+mydata5 <- mydata4 %>%
+  group_by(kcluster) %>% 
+  slice_sample(n=20) %>%
+  ungroup()
+
+set.seed(32877943)
+
+image3 <- function(data = mydata5, 
+                  w = 28, 
+                  h = 28) {
+  mydata5 %>% 
+    mutate(id = 1:n()) %>% 
+    pivot_longer(starts_with("V")) %>% 
+    mutate(col = rep(rep(1:w, each = h), n_distinct(id)),
+           row = rep(rep(1:h, times = w), n_distinct(id)))
+}
+
+gletters3 <- image3(mydata5) %>% 
+    ggplot(aes(col, row)) +
+    geom_tile(aes(fill = value)) + 
+    facet_wrap(kcluster~id, ncol = 10) + 
+    scale_y_reverse() +
+    theme_void(base_size = 12) +
+    guides(fill = "none") +
+    coord_equal() 
+  
+
+
+gletters3
+
+```
+
+In order to get the groups based on principal components of the main data, I used kmeans clustering as it is one of the best method available for clustering. After doing that I got the above three clusters (one cluster in 2 rows).
+
+Also, I got **1514** observations in **cluster-1** and **1567** observations in **cluster-3** but I got only **342** observations in my **cluster-2** which consists mostly **capital I's**. I tried making 4 clusters and there also I got approximately the same number of observations  for capital 'I'. This can be due to the fact that my data has less number of capital I's.
+
+From the above 3 clusters, we can easily observe that these clusters are clearly classified into three different categories.
+
+- **Cluster-1** has all the letters which are little bit **right inclined**. We also see one capital 'I' which is inclined and that can be the reason it lies in the first cluster. Most of these letters are with thick strokes. Most  of them are center aligned.
+
+- **Cluster-2** has all the letters which are mostly in **uppercase** and few of them are right aligned.
+
+- **Cluster-3** has all the letters which are mostly **straight** with very little or no inclination at all. This cluster also has some letters which left inclined and most of them are center aligned.
+
+## Selecting best model for prediction.
+
+```{r, class.source = 'fold-hide'}
+set.seed(32877943)
+mydata4_split <- initial_split(mydata4, prop = 70/100)
+
+mydata4_train <- training(mydata4_split) 
+
+kclustertrain <- as.factor(mydata4_train$kcluster)
+
+mydata4_train2 <- mydata4_train %>%
+  select(-kcluster)
+
+mydata4_test <- testing(mydata4_split) 
+
+kclustertest <- as.factor(mydata4_test$kcluster)
+
+mydata4_test2 <- mydata4_test %>%
+  select(-kcluster)
+
+train_pca <- prcomp(mydata4_train2)
+
+final_train_set <- as.data.frame(cbind(train_pca$x[,1:70], kclustertrain)) %>%
+  mutate(kclustertrain = as.factor(kclustertrain))
+
+#applying transformation on the test set.
+
+trans_test_set <-  as.data.frame(as.matrix(mydata4_test2) %*% train_pca$rotation) %>%
+  select(1:70)
+
+final_test_set <- cbind(trans_test_set, kclustertest)  %>%
+  mutate(kclustertest = as.factor(kclustertest))
+
+
+
+
+```
+
+
+
+In the above chunk, I am splitting my main training data into train and test and I will be using these training and test data sets for modeling and getting prediction and then select the best model with best predictions and that model will then be used to get predictions on the main test data i.e. **newrecords** data.
+
+Here I am only selecting first 70 principal components as they are explaining **95.29** % variance of the original data.
+
+## Fitting different models, making predictions and estimating  best model based on accuracy. 
+
+```{r, class.source = 'fold-hide'}
+set.seed(32877943)
+
+rpartmodel <- rpart(kclustertrain ~ ., 
+                      data = final_train_set,
+                      method = "class")
+
+rpart_pred <- final_test_set %>%
+  mutate(pred_cluster = predict(rpartmodel, newdata = ., type = "class"))
+
+
+
+
+knn_model <- kknn(kclustertrain ~ ., 
+                 train = final_train_set,
+                 test = final_test_set,
+                 k = 10,
+                 # parameter of Minkowski distance 
+                 # 2 = Euclidean distance 
+                 # 1 = Manhattan distance
+                 distance = 2)
+
+kknn_pred <- final_test_set %>%
+  mutate(pred_cluster = knn_model$fitted.values)
+
+
+
+
+class_rf <- ranger(kclustertrain ~ ., 
+                   data = final_train_set,
+                   mtry = floor((ncol(final_test_set) - 1) / 3),
+                   importance = "impurity",
+                   num.trees = 500,
+                   classification = TRUE)
+
+ranger_pred <- final_test_set %>%
+  mutate(pred_cluster = predict(class_rf, final_test_set)$predictions)
+
+
+class_xgb <- xgboost(data = model.matrix(~ . - kclustertrain, data = final_train_set)[, -1],
+                     label = final_train_set$kclustertrain,
+                     max.depth = 2,
+                     eta = 1,
+                     nrounds = 10,
+                     objective = "multi:softmax",
+                     verbose = 0,
+                     num_class = 4)
+
+xgboost_pred <- final_test_set %>%
+  mutate(pred_cluster = predict(class_xgb, model.matrix(~ . - kclustertest, data = .)[, -1])) %>%
+  mutate(pred_cluster = as.factor(pred_cluster)) 
+
+
+a <- metrics(rpart_pred, kclustertest,pred_cluster)$.estimate[1]
+b <- metrics(kknn_pred, kclustertest,pred_cluster)$.estimate[1]
+c <- metrics(ranger_pred, kclustertest,pred_cluster)$.estimate[1]
+d <- metrics(xgboost_pred, kclustertest,pred_cluster)$.estimate[1]
+
+
+final_result <- tibble(
+  Name = c("rpart_model", "knn_model", "random_forest_model", "xgboost_model"),
+  Accuracy = c(a, b, c, d)
+)
+final_result
+
+```
+
+From the above analysis, I fitted different models to my training data (from main training data) and predicted clusters in which every row lies for every model and then I calculated accuracy for each model and we can see from the above table, **knn_model** and **xgboost_model** are best models with almost 90 % accuracy. Therefore I could have used any of these models to get my final predictions but since xgboost_model is slightly more accurate than knn_model, I will be using **xgboost_model** as my final model to classify images in **newrecords** into the above mentioned clusters.
+
+## Fitting Xgboost model to main data and making predictions for newrecords data.
+
+```{r, class.source = 'fold-hide'}
+
+set.seed(32877943)
+
+newrecords_data <- as.matrix(newrecords) %*% data_pca$rotation
+
+final_newrecords_data <- as.data.frame(newrecords_data[, 1:70])
+
+main_train_data <- cbind(as.data.frame(data_pca$x[, 1:70]), kcluster)
+
+xgboost_model_final <- xgboost(data = model.matrix(~ . - kcluster, data = main_train_data)[, -1],
+                               label = main_train_data$kcluster,
+                               max.depth = 2,
+                               eta = 1,
+                               nrounds = 10,
+                               objective = "multi:softmax",
+                               verbose = 0,
+                               num_class = 4)
+
+xgboost_pred_final <- final_newrecords_data %>%
+  mutate(pred_cluster = predict(xgboost_model_final, model.matrix(~ . , data = .)[, -1])) 
+
+xgboost_pred_final$pred_cluster
+
+```
+From the above model, I got the above classification of clusters. 
+
+1st and 4th image - **Cluster-3**
+2nd, 3rd and 5th image - **Cluster-1**
+
+I just wanted to check if I am getting the same results with knn model as both the models were providing almost same accuracy percentage.
+
+```{r}
+knn_final_model <- kknn(kcluster ~ ., 
+                        train = main_train_data,
+                        test = final_newrecords_data,
+                        k = 10,
+                        distance = 2)
+
+kknn_pred_final <- final_newrecords_data %>%
+  mutate(pred_cluster = knn_final_model$fitted.values)
+
+kknn_pred_final$pred_cluster
+```
+From knn model also, I got the same results.
+
+
+```{r, class.source = 'fold-hide'}
+
+image4 <- function(data = newrecords, 
+                  w = 28, 
+                  h = 28) {
+  newrecords %>% 
+    mutate(id = 1:n()) %>% 
+    pivot_longer(starts_with("V")) %>% 
+    mutate(col = rep(rep(1:w, each = h), n_distinct(id)),
+           row = rep(rep(1:h, times = w), n_distinct(id)))
+}
+
+gletters4 <- image4(newrecords) %>% 
+    ggplot(aes(col, row)) +
+    geom_tile(aes(fill = value)) + 
+    facet_wrap(~id, ncol = 5) + 
+    scale_y_reverse() +
+    theme_void(base_size = 12) +
+    guides(fill = "none") +
+    coord_equal() 
+  
+
+
+gletters4
+
+```
+
+# CONCLUSION
+
+The predictions which I got from my xgboost and knn models classify the following images as follows-
+
+- **image 1** and **image 4** into **3rd cluster**. **3rd cluster** consists letters which are either very little bit **inclined or not inclined or little bit left inclined** at all. Here also, image 1 is **slightly inclined** and that too **left inclined** and **image 4** is **straight**. So this classification is correct. 
+
+- For **images 2, 3 and 5**, all are **right inclined** and this is our **cluster 1**. Therefore this classification is also very good.
+
+Overall, I got two models with highest accuracy and I used both models to get my predictions and I got the same result which provided even more evidence that my predictions could be correct. The main model which I used was **xgboost_model** and the model has predicted correct clusters for observations in **newrecords** data as per the above discussion.
+
+# References
+
+- ETC 5250 - Introduction to Machine Learning Lecture Slides.
